@@ -1,4 +1,8 @@
 import type { Vec2, Vec3, Vec4 } from "./math";
+import {
+  normalizeOptionalMaterialInstance,
+  type MaterialInstance,
+} from "./materialInstance";
 import type {
   ParticleColorGradientSettings,
   ParticleScalarValue,
@@ -223,6 +227,10 @@ export type ParticleTrailTextureMode = "stretch" | "tile";
  */
 export type ParticleTrailMode = "particleHistory" | "ribbon";
 export interface ParticleTrailSettings {
+  /** Independent Three.js trail surface; null preserves legacy rendering. */
+  material: MaterialInstance | null;
+  depthTest: boolean;
+  depthWrite: boolean;
   mode: ParticleTrailMode;
   ratio: number;
   lifetime: ParticleScalarValue;
@@ -401,6 +409,9 @@ export function createDefaultParticleAdvancedModules(): ParticleAdvancedModuleSe
       additive: true,
     },
     trails: {
+      material: null,
+      depthTest: true,
+      depthWrite: false,
       mode: "particleHistory",
       ratio: 1,
       lifetime: createConstantScalar(0.5, 0, 8),
@@ -832,6 +843,10 @@ function normalizeTrails(
       ? null
       : normalizeGradient(source.color, [1, 1, 1, 1], [1, 1, 1, 0]);
   return {
+    material: normalizeOptionalMaterialInstance(source.material),
+    depthTest: typeof source.depthTest === "boolean" ? source.depthTest : true,
+    depthWrite:
+      typeof source.depthWrite === "boolean" ? source.depthWrite : false,
     mode: source.mode === "ribbon" ? "ribbon" : "particleHistory",
     ratio: clampNumber(numberOr(source.ratio, fallback.ratio), 0, 1),
     lifetime: normalizeScalar(source.lifetime, 0.5, 0, 8),

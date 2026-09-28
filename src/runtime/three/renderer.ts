@@ -81,6 +81,8 @@ import {
 } from "../schema/materials";
 import {
   createThreeEmitterMaterial,
+  createThreeTrailMaterial,
+  type ThreeEmitterMaterialResolution,
   emitterProceduralBillboardKey,
   emitterTexturePath,
   isThreeParticleMaterial,
@@ -138,7 +140,9 @@ interface ThreeEmitterView {
   debugBounds: { min: Vec3; max: Vec3 };
   trailMesh: Mesh;
   trailGeometry: BufferGeometry;
-  trailMaterial: MeshBasicMaterial;
+  trailMaterial: ThreeParticleMaterial;
+  trailResolution: ThreeEmitterMaterialResolution | null;
+  trailTextureFrames: ThreeTextureFrameSet | null;
   trailHistories: Map<string, ThreeTrailHistory>;
   trailEmitterPosition: Vec3;
   ownedTextures: Texture[];
@@ -165,6 +169,7 @@ interface ThreeViewBuildContext {
 }
 
 interface ThreeTrailPoint {
+  dynamicParams: [number, number, number, number] | null;
   position: Vector3;
   timeSeconds: number;
   lifetimeSeconds: number;
@@ -197,6 +202,7 @@ interface ParticleSample {
   rotation: Vec3;
   color: Color;
   shaderColor: Vec3;
+  trailColor: [number, number, number, number];
   alpha: number;
   alignmentAxis: Vector3;
   normal: Vector3;
@@ -314,6 +320,7 @@ export class ThreeVfxEffectInstance implements VfxEffectInstance {
     rotation: [0, 0, 0],
     color: new Color(),
     shaderColor: [1, 1, 1],
+    trailColor: [1, 1, 1, 1],
     alpha: 1,
     alignmentAxis: new Vector3(),
     normal: new Vector3(),
@@ -764,14 +771,14 @@ export class ThreeVfxEffectInstance implements VfxEffectInstance {
     view.material.blending = blending;
     view.material.premultipliedAlpha = premultiplied;
     view.instanced?.setRenderState(emitter);
-    view.trailMaterial.depthTest = emitter.render.depthTest;
-    view.trailMaterial.depthWrite = depthWrite;
-    view.trailMaterial.blending = blending;
-    view.trailMaterial.premultipliedAlpha = premultiplied;
-    if (materialOwnsBlend) {
-      view.material.transparent = false;
-      view.trailMaterial.transparent = false;
+    if (!view.trailResolution) {
+      view.trailMaterial.depthTest = emitter.render.depthTest;
+      view.trailMaterial.depthWrite = depthWrite;
+      view.trailMaterial.blending = blending;
+      view.trailMaterial.premultipliedAlpha = premultiplied;
+      if (materialOwnsBlend) view.trailMaterial.transparent = false;
     }
+    if (materialOwnsBlend) view.material.transparent = false;
     applyThreeLocalSpaceTrailShift(view, emitter, this.position);
 
     let visibleCount = 0;
@@ -1111,6 +1118,13 @@ export class ThreeVfxEffectInstance implements VfxEffectInstance {
     sample.shaderColor[1] = renderColor[1];
     sample.shaderColor[2] = renderColor[2];
     sample.alpha = alpha;
+    // Preserve pre-material color for independently shaded trails.
+    if (emitter.modules.trails && emitter.advanced.trails.material) {
+      sample.trailColor[0] = initColor[0] * intensity * overLife[0];
+      sample.trailColor[1] = initColor[1] * intensity * overLife[1];
+      sample.trailColor[2] = initColor[2] * intensity * overLife[2];
+      sample.trailColor[3] = initColor[3] * overLife[3];
+    }
     sample.alignmentAxis.copy(alignmentAxis);
     sample.normal.copy(alignmentAxis);
     sample.emissiveStrength = Math.max(hdrColor[0], hdrColor[1], hdrColor[2]);
@@ -1143,6 +1157,8 @@ export class ThreeVfxEffectInstance implements VfxEffectInstance {
       sample.shaderColor[1] *= tint[1];
       sample.shaderColor[2] *= tint[2];
       sample.alpha *= tint[3];
+      for (let channel = 0; channel < 4; channel++)
+        sample.trailColor[channel] *= tint[channel]!;
     }
     return sample;
   }
@@ -1569,6 +1585,8 @@ export class ThreeVfxEffectInstance implements VfxEffectInstance {
     const missing = new Set<string>();
     for (const view of this.emitterViews) {
       if (view.missingMaterialRef) missing.add(view.missingMaterialRef);
+      if (view.trailResolution?.missingMaterialRef)
+        missing.add(view.trailResolution.missingMaterialRef);
     }
     return [...missing];
   }
@@ -1802,16 +1820,31 @@ function createEmitterView(
         )
       : null;
   const trailGeometry = new BufferGeometry();
-  const trailMaterial = new MeshBasicMaterial({
-    transparent: true,
-    vertexColors: true,
-    depthTest: emitter.render.depthTest,
-    depthWrite: resolveParticleDepthWrite(emitter.render),
-    blending:
-      emitter.render.blend === "additive" ? AdditiveBlending : NormalBlending,
-    premultipliedAlpha: emitter.render.blend === "premultiplied",
-    side: DoubleSide,
-  });
+  const trailResolution = createThreeTrailMaterial(emitter, options);
+  const trailMaterial =
+    trailResolution?.material ??
+    new MeshBasicMaterial({
+      transparent: true,
+      vertexColors: true,
+      depthTest: emitter.render.depthTest,
+      depthWrite: resolveParticleDepthWrite(emitter.render),
+      blending:
+        emitter.render.blend === "additive" ? AdditiveBlending : NormalBlending,
+      premultipliedAlpha: emitter.render.blend === "premultiplied",
+      side: DoubleSide,
+    });
+  const trailTextureFrames =
+    trailResolution && !(trailMaterial instanceof ShaderMaterial)
+      ? createThreeTextureFrameSet(
+          trailMaterial.map,
+          trailMaterial.alphaMap,
+          {
+            ...emitter,
+            modules: { ...emitter.modules, textureSheetAnimation: false },
+          },
+          trailResolution.fixed,
+        )
+      : null;
   const trailMesh = new Mesh(trailGeometry, trailMaterial);
   trailMesh.frustumCulled = false;
   trailMesh.visible = false;
@@ -1828,10 +1861,17 @@ function createEmitterView(
     trailMesh,
     trailGeometry,
     trailMaterial,
+    trailResolution,
+    trailTextureFrames,
     trailHistories: new Map(),
     trailEmitterPosition: [0, 0, 0],
     material: hostMaterial ?? material.material,
-    ownedTextures: [...material.ownedTextures, ...textureFrames.ownedTextures],
+    ownedTextures: [
+      ...material.ownedTextures,
+      ...textureFrames.ownedTextures,
+      ...(trailResolution?.ownedTextures ?? []),
+      ...(trailTextureFrames?.ownedTextures ?? []),
+    ],
     textureFrames,
     materialFixed: hostMaterial ? null : material.fixed,
     materialParticleColorUsage: hostMaterial
@@ -1842,7 +1882,10 @@ function createEmitterView(
       : material.opacityIsConstantOne,
     materialBlend: hostMaterial ? null : material.materialBlend,
     missingMaterialRef: hostMaterial ? null : material.missingMaterialRef,
-    unsupportedFeatures: material.unsupportedFeatures,
+    unsupportedFeatures: [
+      ...material.unsupportedFeatures,
+      ...(trailResolution?.unsupportedFeatures ?? []),
+    ],
     hostMaterial: hostMaterial !== null,
   };
 }
@@ -2019,6 +2062,9 @@ function updateThreeTrailHistory(
     sample.position[1],
     sample.position[2],
   );
+  const trailColor = view.trailResolution
+    ? sample.trailColor
+    : [sample.color.r, sample.color.g, sample.color.b, sample.alpha];
   const points = history.points;
   const last = points[points.length - 1];
   if (
@@ -2026,22 +2072,28 @@ function updateThreeTrailHistory(
     last.position.distanceTo(position) >= settings.minVertexDistance
   ) {
     points.push({
+      dynamicParams: view.trailResolution
+        ? sampleEmitterDynamicParams(emitter, sample)
+        : null,
       position,
       timeSeconds,
       lifetimeSeconds,
       distanceFromHead: 0,
-      color: [sample.color.r, sample.color.g, sample.color.b],
-      alpha: sample.alpha,
+      color: [trailColor[0]!, trailColor[1]!, trailColor[2]!],
+      alpha: trailColor[3]!,
       width,
       maxLength: length > 0 ? length : undefined,
       seed: sample.seed,
     });
   } else {
+    last.dynamicParams = view.trailResolution
+      ? sampleEmitterDynamicParams(emitter, sample)
+      : null;
     last.position.copy(position);
     last.timeSeconds = timeSeconds;
     last.lifetimeSeconds = lifetimeSeconds;
-    last.color = [sample.color.r, sample.color.g, sample.color.b];
-    last.alpha = sample.alpha;
+    last.color = [trailColor[0]!, trailColor[1]!, trailColor[2]!];
+    last.alpha = trailColor[3]!;
     last.width = width;
     last.maxLength = length > 0 ? length : undefined;
     last.seed = sample.seed;
@@ -2091,8 +2143,31 @@ function drawThreeTrailView(
   }
   const positions: number[] = [];
   const colors: number[] = [];
+  const uvs: number[] = [];
+  const normals: number[] = [];
+  const dynamicParams: number[] = [];
   const indices: number[] = [];
   const settings = emitter.advanced.trails;
+  const resolution = view.trailResolution;
+  const shader = view.trailMaterial instanceof ShaderMaterial;
+  if (
+    view.trailMaterial instanceof ShaderMaterial &&
+    view.trailMaterial.uniforms.uTime
+  ) {
+    view.trailMaterial.uniforms.uTime.value = timeSeconds;
+  }
+  if (
+    view.trailTextureFrames &&
+    !(view.trailMaterial instanceof ShaderMaterial)
+  ) {
+    applyThreeTextureFrame(
+      view.trailMaterial,
+      view.trailTextureFrames,
+      0,
+      resolution?.fixed ?? null,
+      timeSeconds,
+    );
+  }
   const srgbColor = new Color();
   for (const [key, history] of view.trailHistories) {
     pruneThreeTrailPoints(history.points, undefined, timeSeconds);
@@ -2124,7 +2199,12 @@ function drawThreeTrailView(
       let alpha = point.alpha;
       if (settings.color) {
         const rgb = sampleParticleGradientColor(settings.color, trailT);
-        srgbColor.setRGB(rgb[0], rgb[1], rgb[2], SRGBColorSpace);
+        srgbColor.setRGB(
+          rgb[0],
+          rgb[1],
+          rgb[2],
+          resolution ? undefined : SRGBColorSpace,
+        );
         r = srgbColor.r;
         g = srgbColor.g;
         b = srgbColor.b;
@@ -2133,6 +2213,30 @@ function drawThreeTrailView(
         r = 1;
         g = 1;
         b = 1;
+      }
+      if (resolution) {
+        if (!resolution.particleColorUsage.rgb) {
+          r = 1;
+          g = 1;
+          b = 1;
+        }
+        if (!resolution.particleColorUsage.alpha) alpha = 1;
+      }
+      if (resolution && !shader) {
+        const usage = resolution.particleColorUsage;
+        const fixed = resolution.fixed;
+        const tint = fixed?.tint ?? [1, 1, 1, 1];
+        const emissive = 1 + Math.max(0, fixed?.emissive ?? 0);
+        srgbColor.setRGB(
+          (usage.rgb ? r : 1) * tint[0]! * emissive,
+          (usage.rgb ? g : 1) * tint[1]! * emissive,
+          (usage.rgb ? b : 1) * tint[2]! * emissive,
+          SRGBColorSpace,
+        );
+        r = srgbColor.r;
+        g = srgbColor.g;
+        b = srgbColor.b;
+        alpha = (usage.alpha ? alpha : 1) * tint[3]! * (fixed?.opacity ?? 1);
       }
       alpha *= (1 - trailT) * ageFade;
       const width =
@@ -2164,6 +2268,24 @@ function drawThreeTrailView(
         point.position.z + side.z,
       );
       colors.push(r, g, b, alpha, r, g, b, alpha);
+      if (resolution) {
+        const u =
+          settings.textureMode === "tile"
+            ? point.distanceFromHead
+            : point.distanceFromHead /
+              Math.max(points[0]!.distanceFromHead, 0.000001);
+        uvs.push(u, 0, u, 1);
+        if (point.dynamicParams)
+          dynamicParams.push(...point.dynamicParams, ...point.dynamicParams);
+        normals.push(
+          viewDir.x,
+          viewDir.y,
+          viewDir.z,
+          viewDir.x,
+          viewDir.y,
+          viewDir.z,
+        );
+      }
     }
     const vertexCount = positions.length / 3 - startVertex;
     for (let i = 0; i < vertexCount / 2 - 1; i++) {
@@ -2183,6 +2305,17 @@ function drawThreeTrailView(
     "color",
     new Float32BufferAttribute(colors, 4),
   );
+  if (resolution) {
+    view.trailGeometry.setAttribute(
+      "trailDynamicParams",
+      new Float32BufferAttribute(dynamicParams, 4),
+    );
+    view.trailGeometry.setAttribute("uv", new Float32BufferAttribute(uvs, 2));
+    view.trailGeometry.setAttribute(
+      "normal",
+      new Float32BufferAttribute(normals, 3),
+    );
+  }
   view.trailGeometry.setIndex(indices);
   view.trailGeometry.computeBoundingSphere();
   view.trailMesh.visible = true;
@@ -2198,6 +2331,9 @@ function clearThreeTrailGeometry(view: ThreeEmitterView): void {
   view.trailGeometry.setIndex([]);
   view.trailGeometry.deleteAttribute("position");
   view.trailGeometry.deleteAttribute("color");
+  view.trailGeometry.deleteAttribute("trailDynamicParams");
+  view.trailGeometry.deleteAttribute("uv");
+  view.trailGeometry.deleteAttribute("normal");
 }
 
 function pruneThreeTrailPoints(
@@ -2303,6 +2439,31 @@ function geometryDebugBounds(geometry: BufferGeometry): {
   };
 }
 
+// Definitions and provider graphs are immutable snapshots. Cache their keys so
+// ensureViews does not serialize a whole graph in every animation frame.
+const materialViewKeys = new WeakMap<object, string>();
+function cachedMaterialKey(value: object | null | undefined): string {
+  if (!value) return "";
+  let key = materialViewKeys.get(value);
+  if (key === undefined) {
+    key = JSON.stringify(value);
+    materialViewKeys.set(value, key);
+  }
+  return key;
+}
+
+const materialGraphViewIds = new WeakMap<object, number>();
+let nextMaterialGraphViewId = 1;
+function materialGraphViewKey(graph: object | undefined): number {
+  if (!graph) return 0;
+  let id = materialGraphViewIds.get(graph);
+  if (id === undefined) {
+    id = nextMaterialGraphViewId++;
+    materialGraphViewIds.set(graph, id);
+  }
+  return id;
+}
+
 function emitterStaticViewKey(
   emitter: ParticleEmitterDefinition,
   options: ThreeVfxEffectInstanceOptions,
@@ -2331,6 +2492,20 @@ function emitterStaticViewKey(
     Number(emitter.mesh.recomputeNormals),
     emitterTexturePath(emitter) ?? emitterProceduralBillboardKey(emitter) ?? "",
     emitter.render.material?.shaderId ?? "",
+    cachedMaterialKey(emitter.advanced.trails.material),
+    emitter.advanced.trails.material
+      ? JSON.stringify([
+          emitter.advanced.trails.texture,
+          emitter.advanced.trails.textureMode,
+          emitter.advanced.trails.depthTest,
+          emitter.advanced.trails.depthWrite,
+          materialGraphViewKey(
+            options.materialGraphProvider?.(
+              emitter.advanced.trails.material.shaderId,
+            ),
+          ),
+        ])
+      : "",
     materialGraph?.side ?? "double",
     materialGraph?.blend ?? "normal",
     emitter.render.shading,

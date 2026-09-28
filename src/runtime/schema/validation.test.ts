@@ -1146,3 +1146,48 @@ describe("vfx asset path validation", () => {
     });
   });
 });
+
+describe("trail material validation", () => {
+  it("accepts graph-default MainTex and reports missing trail graphs at the trail slot", () => {
+    const effect = createDefaultParticleEffect();
+    const emitter = effect.emitters[0]!;
+    emitter.modules.trails = true;
+    emitter.advanced.trails.material = {
+      id: "trail",
+      shaderId: "trail-graph",
+      paramOverrides: {},
+    };
+    const graph = {
+      id: "trail-graph",
+      name: "Trail",
+      blend: "normal",
+      params: [{ name: "MainTex", type: "texture", default: "fx/default.png" }],
+      nodes: [{ id: "tex", type: "textureSample", inputs: {}, params: {} }],
+      edges: [
+        {
+          id: "out",
+          source: "tex",
+          sourceHandle: "RGB",
+          target: "output",
+          targetHandle: "baseColor",
+        },
+      ],
+      outputs: { baseColor: "out" },
+    };
+    const valid = validateVfxAuthoringEffect(effect, {
+      materialGraphs: { "trail-graph": graph },
+    });
+    expect(
+      valid.blockers.filter((issue) => issue.path.includes("trails.material")),
+    ).toEqual([]);
+    const missing = validateVfxAuthoringEffect(effect, { materialGraphs: {} });
+    expect(missing.blockers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "missing-material",
+          path: "emitters.0.advanced.trails.material",
+        }),
+      ]),
+    );
+  });
+});
