@@ -2112,6 +2112,74 @@ describe("ThreeVfxRenderer transform MVP", () => {
     instance.destroy();
   });
 
+  it("composes independent Three trail RGBA and preserves inherited colors", () => {
+    const gradient = (color: number[], alpha: number) => ({
+      mode: "blend",
+      colorStops: [
+        { position: 0, color },
+        { position: 1, color },
+      ],
+      alphaStops: [
+        { position: 0, alpha },
+        { position: 1, alpha },
+      ],
+    });
+    const render = (inheritColor: boolean, authored: boolean) => {
+      const renderer = new ThreeVfxRenderer({
+        scene: new Scene(),
+        camera: createCamera(),
+      });
+      const instance = renderer.createEffect(
+        normalizeParticleEffect({
+          emitters: [
+            {
+              ...singleBurstEmitter(),
+              modules: {
+                color: false,
+                rotation: false,
+                velocity: true,
+                trails: true,
+              },
+              initializeParticle: {
+                velocity: { mode: "vector", min: [2, 0, 0], max: [2, 0, 0] },
+              },
+              advanced: {
+                trails: {
+                  inheritColor,
+                  minVertexDistance: 0.001,
+                  length: { mode: "constant", value: 2 },
+                  ...(authored
+                    ? {
+                        colorOverLifetime: gradient([1, 0.5, 0.5], 0.5),
+                        colorOverTrail: gradient([0.5, 1, 0.5], 0.8),
+                      }
+                    : {}),
+                },
+              },
+            },
+          ],
+        }),
+      );
+      for (let i = 0; i < 3; i++) renderer.update(1 / 60);
+      const attribute = firstTrailMesh(instance).geometry.getAttribute("color");
+      const rgba = [
+        attribute.getX(0),
+        attribute.getY(0),
+        attribute.getZ(0),
+        attribute.getW(0),
+      ];
+      renderer.destroy();
+      return rgba;
+    };
+    const independent = render(false, true);
+    const white = render(false, false);
+    expect(independent[0]).toBeCloseTo(srgbToLinear(0.5));
+    expect(independent[1]).toBeCloseTo(srgbToLinear(0.5));
+    expect(independent[2]).toBeCloseTo(srgbToLinear(0.25));
+    expect(independent[3]).toBeCloseTo(white[3]! * 0.4);
+    expect(render(true, true)).toEqual(render(true, false));
+  });
+
   it("renders camera-facing history trails in Three with length 0 lifetime semantics", () => {
     const camera = createCamera();
     const renderer = new ThreeVfxRenderer({ scene: new Scene(), camera });

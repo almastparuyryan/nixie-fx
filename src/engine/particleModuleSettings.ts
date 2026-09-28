@@ -238,7 +238,12 @@ export interface ParticleTrailSettings {
   width: ParticleScalarValue;
   /** Width multiplier sampled by normalized trail position. */
   widthOverTrail: ParticleScalarValue;
+  /** Legacy trail-position override, retained for inherited-color effects. */
   color: ParticleColorGradientSettings | null;
+  /** Sampled by each trail point's age divided by its authored lifetime. */
+  colorOverLifetime: ParticleColorGradientSettings;
+  /** Sampled from head (0) to tail (1), multiplied by colorOverLifetime. */
+  colorOverTrail: ParticleColorGradientSettings;
   inheritColor: boolean;
   textureMode: ParticleTrailTextureMode;
   texture: string | null;
@@ -419,6 +424,8 @@ export function createDefaultParticleAdvancedModules(): ParticleAdvancedModuleSe
       width: createConstantScalar(1, 0.01, 4),
       widthOverTrail: createConstantScalar(1, 0, 1),
       color: null,
+      colorOverLifetime: createGradient([1, 1, 1, 1], [1, 1, 1, 1]),
+      colorOverTrail: createGradient([1, 1, 1, 1], [1, 1, 1, 1]),
       inheritColor: true,
       textureMode: "stretch",
       texture: null,
@@ -854,6 +861,16 @@ function normalizeTrails(
     width: normalizeScalar(source.width, 1, 0.01, 4),
     widthOverTrail: normalizeScalar(source.widthOverTrail, 1, 0, 1),
     color,
+    colorOverLifetime: normalizeGradient(
+      source.colorOverLifetime,
+      [1, 1, 1, 1],
+      [1, 1, 1, 1],
+    ),
+    colorOverTrail: normalizeGradient(
+      source.colorOverTrail ?? color,
+      [1, 1, 1, 1],
+      [1, 1, 1, 1],
+    ),
     inheritColor:
       typeof source.inheritColor === "boolean"
         ? source.inheritColor

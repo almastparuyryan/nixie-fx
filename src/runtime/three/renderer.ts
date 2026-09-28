@@ -1,3 +1,4 @@
+import { sampleIndependentTrailColor } from "../trailColor";
 import {
   PARTICLE_ALIGNMENT_AXIS,
   PARTICLE_FRONT_AXIS,
@@ -26,7 +27,7 @@ import {
   type Object3D,
   type Scene,
 } from "three";
-import type { Vec3 } from "../../engine/math";
+import type { Vec3, Vec4 } from "../../engine/math";
 import {
   PARTICLE_INSTANCE_STRIDE,
   PARTICLE_RUNTIME_VECTOR_STRIDE,
@@ -2148,6 +2149,7 @@ function drawThreeTrailView(
   const dynamicParams: number[] = [];
   const indices: number[] = [];
   const settings = emitter.advanced.trails;
+  const trailColor: Vec4 = [1, 1, 1, 1];
   const resolution = view.trailResolution;
   const shader = view.trailMaterial instanceof ShaderMaterial;
   if (
@@ -2197,7 +2199,24 @@ function drawThreeTrailView(
       let g = point.color[1];
       let b = point.color[2];
       let alpha = point.alpha;
-      if (settings.color) {
+      if (!settings.inheritColor) {
+        const rgba = sampleIndependentTrailColor(
+          settings,
+          1 - ageFade,
+          trailT,
+          trailColor,
+        );
+        srgbColor.setRGB(
+          rgba[0],
+          rgba[1],
+          rgba[2],
+          resolution ? undefined : SRGBColorSpace,
+        );
+        r = srgbColor.r;
+        g = srgbColor.g;
+        b = srgbColor.b;
+        alpha = rgba[3];
+      } else if (settings.color) {
         const rgb = sampleParticleGradientColor(settings.color, trailT);
         srgbColor.setRGB(
           rgb[0],
@@ -2209,10 +2228,6 @@ function drawThreeTrailView(
         g = srgbColor.g;
         b = srgbColor.b;
         alpha = sampleParticleGradientAlpha(settings.color, trailT);
-      } else if (!settings.inheritColor) {
-        r = 1;
-        g = 1;
-        b = 1;
       }
       if (resolution) {
         if (!resolution.particleColorUsage.rgb) {
