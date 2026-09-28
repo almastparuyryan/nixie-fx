@@ -41,6 +41,54 @@ function graph() {
 }
 
 describe("Two Sided Sign", () => {
+  it.each([
+    ["mesh", "meshAsset", "normal", "double", false],
+    ["mesh", "meshAsset", "normal", "front", true],
+    ["mesh", "meshAsset", "normal", "back", true],
+    ["mesh", "meshAsset", "opaque", "double", true],
+    ["mesh", "meshAsset", "masked", "double", true],
+    ["mesh", "meshAsset", "add", "double", true],
+    ["mesh", "pixiShard", "normal", "double", true],
+    ["billboard", "pixiShard", "normal", "double", true],
+  ] as const)(
+    "uses the appropriate pass count for %s/%s/%s/%s",
+    (mode, renderMode, blend, side, singlePass) => {
+      const g = graph();
+      g.blend = blend;
+      g.side = side;
+      const effect = normalizeParticleEffect({
+        emitters: [
+          {
+            mode,
+            mesh: { renderMode },
+            render: {
+              material: createMaterialInstance(g, "i"),
+              depthWrite: false,
+            },
+          },
+        ],
+      });
+      const texture = new Texture();
+      const { material } = createThreeEmitterMaterial(effect.emitters[0]!, {
+        effect,
+        camera: new PerspectiveCamera(),
+        textureProvider: { getTexture: () => texture },
+        materialGraphProvider: () => g,
+      });
+      expect(material.forceSinglePass).toBe(singlePass);
+      expect(material.side).toBe(
+        side === "double"
+          ? DoubleSide
+          : side === "front"
+            ? FrontSide
+            : BackSide,
+      );
+      expect(material.depthTest).toBe(true);
+      if (blend === "normal") expect(material.depthWrite).toBe(false);
+      material.dispose();
+      texture.dispose();
+    },
+  );
   it("survives serialization and requires fragment evaluation only when connected", () => {
     const g = graph();
     expect(normalizeShaderGraph(serializeShaderGraph(g))).toEqual(g);
