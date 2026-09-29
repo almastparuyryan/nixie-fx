@@ -530,6 +530,17 @@ function createThreeShaderMaterial(
     blending: threeBlendingForEffectiveBlend(effectiveBlend),
     premultipliedAlpha: effectiveBlend === "premultiplied",
     side: threeSideForGraph(graph),
+    // Alpha-blended 3D meshes need backs before fronts, like Three's built-in
+    // materials. ShaderMaterial defaults to one pass, which lets triangle
+    // index order put rear surfaces over the front. Flat particles and additive
+    // materials gain nothing from the extra draw, so retain their single pass.
+    forceSinglePass: !(
+      emitter.mode === "mesh" &&
+      emitter.mesh.renderMode === "meshAsset" &&
+      !materialOwnsBlend &&
+      effectiveBlend !== "additive" &&
+      threeSideForGraph(graph) === DoubleSide
+    ),
   });
   return { material, ownedTextures: [] };
 }

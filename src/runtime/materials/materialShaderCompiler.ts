@@ -237,9 +237,22 @@ class MaterialGlslCompiler {
           MATERIAL_SCENE_LIGHTING_NODE_TYPES.has(node.type) ||
           node.type === "unpackNormal",
       );
-    return needsLighting
+    const header = needsLighting
       ? `${MATERIAL_FRAGMENT_HEADER}${MATERIAL_LIGHTING_PRELUDE}`
       : MATERIAL_FRAGMENT_HEADER;
+    if (!this.graph.nodes.some((node) => node.type === "twoSidedSign"))
+      return header;
+    // Three reverses the rasterizer winding for BackSide materials. Undo that
+    // convention for the sign without changing the material's culling state.
+    return `${header}
+float materialTwoSidedSign() {
+#ifdef FLIP_SIDED
+  return gl_FrontFacing ? -1.0 : 1.0;
+#else
+  return gl_FrontFacing ? 1.0 : -1.0;
+#endif
+}
+`;
   }
 
   /** The RGB surface line: lit shading or the unlit tint + emissive fold. */
@@ -422,6 +435,8 @@ void main(void) {
         return this.constVec4(p.value);
       case "time":
         return "vec4(uTime)";
+      case "twoSidedSign":
+        return "vec4(materialTwoSidedSign())";
       case "param": {
         const name = typeof p.name === "string" ? p.name : "";
         return this.constVec4(
