@@ -66,6 +66,62 @@ function graph(partial: Partial<ShaderGraph>): ShaderGraph {
 // ---------------------------------------------------------------------------
 
 describe("analyzeGraphTier", () => {
+  it("keeps Fresnel view-dependent and preserves it across serialization", () => {
+    const g = graph({
+      nodes: [node("rim", "fresnelTrue", {}, { power: 3 })],
+      edges: [edge("out", "rim", "output", "baseColor")],
+      outputs: { baseColor: "out" },
+    });
+    const reopened = normalizeShaderGraph(JSON.parse(JSON.stringify(g)));
+    expect(reopened.nodes[0]?.type).toBe("fresnelTrue");
+    const instance = createMaterialInstance(reopened, "test");
+    const artifact = compileMaterial(reopened, instance);
+    expect(artifact.tier).toBe("tier2-shader");
+    expect(artifact.usesSceneLighting).toBe(true);
+    const fragment = createMaterialPreviewFragmentSource({
+      graph: reopened,
+      instance,
+      artifact,
+    });
+    expect(fragment).toContain("nfxViewToWorld(nfxGeometryViewNormal())");
+    expect(fragment).toContain("nfxViewToWorld(nfxViewDirectionView())");
+    expect(fragment).toContain("pow(1.0 - clamp(dot(normalize(");
+    expect(fragment).toContain("3.00000000");
+    expect(fragment).not.toContain("length(vUV -");
+  });
+
+  it("Fresnel accepts all three wired inputs over its defaults", () => {
+    const g = graph({
+      nodes: [
+        node("n", "constant", {}, { value: [2, 0, 0, 0] }),
+        node("v", "constant", {}, { value: [0, 0, 4, 0] }),
+        node("p", "constant", {}, { value: [5, 5, 5, 5] }),
+        node(
+          "rim",
+          "fresnelTrue",
+          { normal: "n", viewDir: "v", power: "p" },
+          { power: 99 },
+        ),
+      ],
+      edges: [
+        edge("n", "n", "rim", "normal"),
+        edge("v", "v", "rim", "viewDir"),
+        edge("p", "p", "rim", "power"),
+        edge("out", "rim", "output", "baseColor"),
+      ],
+      outputs: { baseColor: "out" },
+    });
+    const instance = createMaterialInstance(g, "test");
+    const fragment = createMaterialPreviewFragmentSource({
+      graph: g,
+      instance,
+      artifact: compileMaterial(g, instance),
+    });
+    expect(fragment).not.toContain("nfxViewToWorld(nfxGeometryViewNormal())");
+    expect(fragment).not.toContain("99.00000000");
+    expect(fragment).toContain("5.00000000");
+  });
+
   it("treats an empty graph and the Sprite Master builtin as Tier 1", () => {
     expect(analyzeGraphTier(graph({})).tier).toBe("tier1-fixed");
     expect(analyzeGraphTier(createSpriteMasterGraph()).tier).toBe(

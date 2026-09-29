@@ -72,7 +72,6 @@ export const DEFERRED_NODE_TYPES: ReadonlySet<string> = new Set<string>([
   "parallax",
   "parallaxOcclusion",
   "triplanar",
-  "fresnelTrue",
   // Destination/back-buffer reads
   "refraction",
   "modulate",

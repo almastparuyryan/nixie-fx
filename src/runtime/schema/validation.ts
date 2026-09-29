@@ -704,6 +704,8 @@ function analyzeShaderGraphStructure(
   const bannedNodeTypes: string[] = [];
 
   for (const node of reachableNodes) {
+    // Fresnel reads the current surface/camera even without wired inputs.
+    if (node.type === "fresnelTrue") tier2 = true;
     if (
       node.type === "textureSample" ||
       node.type === "particleSubUV" ||

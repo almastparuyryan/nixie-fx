@@ -224,6 +224,7 @@ export type MaterialNodeType =
   | "swizzle"
   | "desaturate"
   | "fresnel" // 2D radial UV falloff (NOT real Fresnel — §4)
+  | "fresnelTrue" // View-dependent Fresnel, with world-space normal/view inputs
   | "sphereMask"
   // --- iteration 5b P0: cheap math glue (Unreal Math Expressions) ---
   | "abs"
@@ -295,6 +296,7 @@ export const MATERIAL_NODE_TYPES: readonly MaterialNodeType[] = [
   "swizzle",
   "desaturate",
   "fresnel",
+  "fresnelTrue",
   "sphereMask",
   "abs",
   "frac",
@@ -338,6 +340,7 @@ export const MATERIAL_NODE_TYPES: readonly MaterialNodeType[] = [
 /** Node types that read scene lighting data (always a Tier-2 shader). */
 export const MATERIAL_SCENE_LIGHTING_NODE_TYPES: ReadonlySet<MaterialNodeType> =
   new Set<MaterialNodeType>([
+    "fresnelTrue",
     "sceneWorldNormal",
     "sceneWorldPosition",
     "sceneViewDirection",

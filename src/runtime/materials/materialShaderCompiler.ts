@@ -481,6 +481,18 @@ void main(void) {
         const speed = this.number(p.speed, 0);
         return `(vec4(((${center}).xy) + mat2(cos(${speed.toFixed(8)} * uTime * 6.2831853), sin(${speed.toFixed(8)} * uTime * 6.2831853), -sin(${speed.toFixed(8)} * uTime * 6.2831853), cos(${speed.toFixed(8)} * uTime * 6.2831853)) * ((${uv}).xy - (${center}).xy), 0.0, 0.0))`;
       }
+      case "fresnelTrue": {
+        const normal = input(
+          "normal",
+          "vec4(nfxViewToWorld(nfxGeometryViewNormal()), 0.0)",
+        );
+        const viewDir = input(
+          "viewDir",
+          "vec4(nfxViewToWorld(nfxViewDirectionView()), 0.0)",
+        );
+        const power = inputScalar("power", this.number(p.power, 1));
+        return `vec4(pow(1.0 - clamp(dot(normalize((${normal}).xyz), normalize((${viewDir}).xyz)), 0.0, 1.0), ${power}))`;
+      }
       case "fresnel": {
         const center = this.constVec4(p.center, [0.5, 0.5, 0, 0]);
         const power = Math.max(0, this.number(p.power, 1));

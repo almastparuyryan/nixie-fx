@@ -171,6 +171,40 @@ function resolve(graph: ShaderGraph, shading: "lit" | "unlit" = "unlit") {
 }
 
 describe("lit particle materials on Three", () => {
+  it("binds actual geometry and camera vectors for unlit Fresnel materials", () => {
+    const graph = litGraph({
+      shadingModel: "unlit",
+      nodes: [
+        {
+          id: "rim",
+          type: "fresnelTrue",
+          inputs: {},
+          params: { power: 2 },
+          position: { x: 0, y: 0 },
+        },
+      ],
+      edges: [
+        {
+          id: "out",
+          source: "rim",
+          sourceHandle: "out",
+          target: "output",
+          targetHandle: "baseColor",
+        },
+      ],
+      outputs: { baseColor: "out" },
+    });
+    const material = resolve(graph).material as ShaderMaterial;
+    expect(material).toBeInstanceOf(ShaderMaterial);
+    expect(material.vertexShader).toContain("vNfxViewNormal");
+    expect(material.vertexShader).toContain("normalMatrix");
+    expect(material.fragmentShader).toContain("#define NFX_SCENE_LIGHTS");
+    expect(material.fragmentShader).toContain(
+      "isOrthographic ? vec3(0.0, 0.0, 1.0) : normalize(vNfxViewPosition)",
+    );
+    expect(material.fragmentShader).not.toContain("outColor.rgb = nfxShadeLit");
+  });
+
   it("renders a lit Tier-2 graph with scene lights bound", () => {
     const resolution = resolve(litGraph());
     const material = resolution.material as ShaderMaterial;
