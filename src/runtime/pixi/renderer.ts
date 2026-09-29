@@ -1,3 +1,4 @@
+import { sampleIndependentTrailColor } from "../trailColor";
 import {
   particleRoll,
   particleRollToScreen,
@@ -2512,6 +2513,7 @@ function drawTrailView(
     return 0;
   }
   const settings = emitter.advanced.trails;
+  const trailColor: Vec4 = [1, 1, 1, 1];
   const gradient = settings.color;
   let visibleCount = 0;
   for (const [key, history] of view.trailHistories) {
@@ -2521,15 +2523,20 @@ function drawTrailView(
       continue;
     }
     const points = history.points;
+    const fallbackLength = Math.max(points[0]?.distanceFromHead ?? 1, 1);
     for (let i = 0; i < points.length; i++) {
       const point = points[i]!;
       const maxLengthPx = point.maxLengthPx;
       if (maxLengthPx !== undefined && point.distanceFromHead > maxLengthPx) {
         continue;
       }
-      const fallbackLength = Math.max(point.widthPx, point.distanceFromHead, 1);
+      // Preserve the legacy inherited fade; independent colors use the full
+      // history length so lifetime-limited trails have a continuous gradient.
+      const positionLength = settings.inheritColor
+        ? Math.max(point.widthPx, point.distanceFromHead, 1)
+        : fallbackLength;
       const trailT = clamp(
-        point.distanceFromHead / (maxLengthPx ?? fallbackLength),
+        point.distanceFromHead / (maxLengthPx ?? positionLength),
         0,
         1,
       );
@@ -2540,13 +2547,20 @@ function drawTrailView(
         clamp((timeSeconds - point.timeSeconds) / point.lifetimeSeconds, 0, 1);
       let tint = point.tint;
       let pointAlpha = point.alpha;
-      if (gradient) {
+      if (!settings.inheritColor) {
+        const rgba = sampleIndependentTrailColor(
+          settings,
+          1 - ageFade,
+          trailT,
+          trailColor,
+        );
+        tint = rgbToTint(rgba[0], rgba[1], rgba[2]);
+        pointAlpha = rgba[3];
+      } else if (gradient) {
         // Authored trail gradient: sample by normalized trail position.
         const rgb = sampleParticleGradientColor(gradient, trailT);
         tint = rgbToTint(rgb[0], rgb[1], rgb[2]);
         pointAlpha = sampleParticleGradientAlpha(gradient, trailT);
-      } else if (!settings.inheritColor) {
-        tint = 0xffffff;
       }
       const alpha = pointAlpha * distanceFade * ageFade;
       if (alpha <= 0.01) continue;

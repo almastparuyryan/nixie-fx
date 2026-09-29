@@ -617,6 +617,43 @@ describe("vfx export compiler", () => {
     );
   });
 
+  it("round-trips independent trail materials and collects their graph textures", () => {
+    const trail = {
+      id: "trail-instance",
+      shaderId: "trail-graph",
+      paramOverrides: { Tint: [0, 1, 1, 1], Opacity: 0.5 },
+      mainTex: { type: "texture", id: "trail", path: "fx/trail.png" },
+    };
+    const compiled = compileVfxExport([
+      {
+        effect: {
+          app: "vfx-editor",
+          kind: "particle-effect",
+          version: 1,
+          id: "trail-fx",
+          name: "Trail FX",
+          emitters: [
+            {
+              id: "emitter",
+              modules: { trails: true },
+              advanced: { trails: { material: trail } },
+            },
+          ],
+        },
+        effectPath: "effects/trail.json",
+      },
+    ]);
+    const emitter = compiled.effects[0]!.effect.emitters[0]!;
+    expect(emitter.render.material).toBeNull();
+    expect(emitter.advanced.trails.material).toEqual(trail);
+    expect(compiled.manifest.assets).toEqual(
+      expect.arrayContaining([
+        { id: "trail", type: "texture", path: "fx/trail.png" },
+        { id: "trail-graph", type: "material", path: "trail-graph" },
+      ]),
+    );
+  });
+
   it("round-trips render.material into the exported emitter and manifest", () => {
     const compiled = compileVfxExport(
       [

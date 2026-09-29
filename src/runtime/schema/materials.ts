@@ -225,6 +225,7 @@ export type MaterialNodeType =
   | "desaturate"
   | "fresnel" // 2D radial UV falloff (NOT real Fresnel — §4)
   | "sphereMask"
+  | "twoSidedSign" // fragment face orientation: front +1, back -1
   // --- iteration 5b P0: cheap math glue (Unreal Math Expressions) ---
   | "abs"
   | "frac"
@@ -296,6 +297,7 @@ export const MATERIAL_NODE_TYPES: readonly MaterialNodeType[] = [
   "desaturate",
   "fresnel",
   "sphereMask",
+  "twoSidedSign",
   "abs",
   "frac",
   "floor",

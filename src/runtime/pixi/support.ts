@@ -267,14 +267,17 @@ export function collectPixiVfxMaterialRefs(
 ): VfxMaterialAssetRef[] {
   const byPath = new Map<string, VfxMaterialAssetRef>();
   for (const emitter of effect.emitters) {
-    const material = emitter.render.material;
-    if (!material) continue;
-    if (material.shaderId === SPRITE_MASTER_SUPPORT_ID) continue;
-    const path = materialAssetPaths
-      ? materialAssetPaths[material.shaderId]
-      : material.shaderId;
-    if (!path || byPath.has(path)) continue;
-    byPath.set(path, { type: "material", id: material.shaderId, path });
+    for (const material of [
+      emitter.render.material,
+      emitter.advanced.trails.material,
+    ]) {
+      if (!material || material.shaderId === SPRITE_MASTER_SUPPORT_ID) continue;
+      const path = materialAssetPaths
+        ? materialAssetPaths[material.shaderId]
+        : material.shaderId;
+      if (!path || byPath.has(path)) continue;
+      byPath.set(path, { type: "material", id: material.shaderId, path });
+    }
   }
   return [...byPath.values()];
 }

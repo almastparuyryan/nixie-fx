@@ -218,6 +218,14 @@ function serializeExportedEmitters(
     const material = effect.emitters[index]?.render.material;
     const render = emitter.render as Record<string, unknown>;
     render.material = material ? serializeMaterialInstance(material) : null;
+    const trailMaterial = effect.emitters[index]?.advanced.trails.material;
+    const trails = emitter.advanced.trails as unknown as Record<
+      string,
+      unknown
+    >;
+    trails.material = trailMaterial
+      ? serializeMaterialInstance(trailMaterial)
+      : null;
     return emitter;
   });
 }

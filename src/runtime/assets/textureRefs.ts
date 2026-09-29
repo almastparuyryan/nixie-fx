@@ -29,16 +29,19 @@ export function collectParticleTextureRefs(
     addPath(emitter.render.texture);
     // A material's MainTex feeds the shared container texture (techspec §8), so
     // it must be collected for export exactly like `render.texture`.
-    const material = emitter.render.material;
-    const graph = material
-      ? options.materialGraphProvider?.(material.shaderId)
-      : undefined;
-    addPath(
-      material ? resolveEffectiveMainTexPath(graph, material) || null : null,
-    );
-    if (material && graph) {
-      for (const path of collectMaterialTextureNodePaths(graph, material)) {
-        addPath(path);
+    for (const material of [
+      emitter.render.material,
+      ...(emitter.modules.trails ? [emitter.advanced.trails.material] : []),
+    ]) {
+      const graph = material
+        ? options.materialGraphProvider?.(material.shaderId)
+        : undefined;
+      addPath(
+        material ? resolveEffectiveMainTexPath(graph, material) || null : null,
+      );
+      if (material && graph) {
+        for (const path of collectMaterialTextureNodePaths(graph, material))
+          addPath(path);
       }
     }
     if (emitter.modules.trails) addPath(emitter.advanced.trails.texture);
