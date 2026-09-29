@@ -1,4 +1,8 @@
 import type { Vec2, Vec3, Vec4 } from "./math";
+import {
+  normalizeOptionalMaterialInstance,
+  type MaterialInstance,
+} from "./materialInstance";
 import type {
   ParticleColorGradientSettings,
   ParticleScalarValue,
@@ -223,6 +227,10 @@ export type ParticleTrailTextureMode = "stretch" | "tile";
  */
 export type ParticleTrailMode = "particleHistory" | "ribbon";
 export interface ParticleTrailSettings {
+  /** Independent Three.js trail surface; null preserves legacy rendering. */
+  material: MaterialInstance | null;
+  depthTest: boolean;
+  depthWrite: boolean;
   mode: ParticleTrailMode;
   ratio: number;
   lifetime: ParticleScalarValue;
@@ -230,7 +238,12 @@ export interface ParticleTrailSettings {
   width: ParticleScalarValue;
   /** Width multiplier sampled by normalized trail position. */
   widthOverTrail: ParticleScalarValue;
+  /** Legacy trail-position override, retained for inherited-color effects. */
   color: ParticleColorGradientSettings | null;
+  /** Sampled by each trail point's age divided by its authored lifetime. */
+  colorOverLifetime: ParticleColorGradientSettings;
+  /** Sampled from head (0) to tail (1), multiplied by colorOverLifetime. */
+  colorOverTrail: ParticleColorGradientSettings;
   inheritColor: boolean;
   textureMode: ParticleTrailTextureMode;
   texture: string | null;
@@ -401,6 +414,9 @@ export function createDefaultParticleAdvancedModules(): ParticleAdvancedModuleSe
       additive: true,
     },
     trails: {
+      material: null,
+      depthTest: true,
+      depthWrite: false,
       mode: "particleHistory",
       ratio: 1,
       lifetime: createConstantScalar(0.5, 0, 8),
@@ -408,6 +424,8 @@ export function createDefaultParticleAdvancedModules(): ParticleAdvancedModuleSe
       width: createConstantScalar(1, 0.01, 4),
       widthOverTrail: createConstantScalar(1, 0, 1),
       color: null,
+      colorOverLifetime: createGradient([1, 1, 1, 1], [1, 1, 1, 1]),
+      colorOverTrail: createGradient([1, 1, 1, 1], [1, 1, 1, 1]),
       inheritColor: true,
       textureMode: "stretch",
       texture: null,
@@ -832,6 +850,10 @@ function normalizeTrails(
       ? null
       : normalizeGradient(source.color, [1, 1, 1, 1], [1, 1, 1, 0]);
   return {
+    material: normalizeOptionalMaterialInstance(source.material),
+    depthTest: typeof source.depthTest === "boolean" ? source.depthTest : true,
+    depthWrite:
+      typeof source.depthWrite === "boolean" ? source.depthWrite : false,
     mode: source.mode === "ribbon" ? "ribbon" : "particleHistory",
     ratio: clampNumber(numberOr(source.ratio, fallback.ratio), 0, 1),
     lifetime: normalizeScalar(source.lifetime, 0.5, 0, 8),
@@ -839,6 +861,16 @@ function normalizeTrails(
     width: normalizeScalar(source.width, 1, 0.01, 4),
     widthOverTrail: normalizeScalar(source.widthOverTrail, 1, 0, 1),
     color,
+    colorOverLifetime: normalizeGradient(
+      source.colorOverLifetime,
+      [1, 1, 1, 1],
+      [1, 1, 1, 1],
+    ),
+    colorOverTrail: normalizeGradient(
+      source.colorOverTrail ?? color,
+      [1, 1, 1, 1],
+      [1, 1, 1, 1],
+    ),
     inheritColor:
       typeof source.inheritColor === "boolean"
         ? source.inheritColor

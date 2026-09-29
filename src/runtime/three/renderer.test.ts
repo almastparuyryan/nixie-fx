@@ -1959,6 +1959,227 @@ describe("ThreeVfxRenderer transform MVP", () => {
     expect(rendered.b).toBeCloseTo(0, 5);
   });
 
+  it("keeps trail textures, tint, and render state independent of the particle material", () => {
+    const graph = createSpriteMasterGraph();
+    const texture = new Texture();
+    const particleMaterial = createMaterialInstance(graph, "particle");
+    particleMaterial.paramOverrides.Tint = [1, 0, 0, 1];
+    const trailMaterial = createMaterialInstance(graph, "trail");
+    trailMaterial.paramOverrides.Tint = [0, 0.5, 1, 1];
+    trailMaterial.mainTex = { type: "texture", id: "trail", path: "trail.png" };
+    const renderer = new ThreeVfxRenderer({
+      scene: new Scene(),
+      camera: createCamera(),
+      materialGraphProvider: () => graph,
+      textureProvider: { getTexture: () => texture },
+    });
+    const effect = normalizeParticleEffect({
+      emitters: [
+        {
+          ...singleBurstEmitter(),
+          id: "independent",
+          modules: { trails: true, velocity: true, color: false },
+          initializeParticle: {
+            velocity: { mode: "vector", min: [2, 0, 0], max: [2, 0, 0] },
+          },
+          render: {
+            material: particleMaterial,
+            blend: "additive",
+            depthTest: true,
+          },
+          advanced: {
+            trails: {
+              material: trailMaterial,
+              depthTest: false,
+              minVertexDistance: 0.001,
+            },
+          },
+        },
+      ],
+    });
+    const instance = renderer.createEffect(effect);
+    for (let i = 0; i < 5; i++) renderer.update(1 / 60);
+    const trail = firstTrailMesh(instance);
+    const material = trail.material as MeshBasicMaterial;
+    expect(material.map).toBe(texture);
+    expect(material.blending).toBe(NormalBlending);
+    expect(material.depthTest).toBe(false);
+    expect(material.depthWrite).toBe(false);
+    const colors = trail.geometry.getAttribute("color");
+    expect(colors.getX(0)).toBe(0);
+    expect(colors.getY(0)).toBeGreaterThan(0);
+    expect(colors.getZ(0)).toBeGreaterThan(colors.getY(0));
+    const particle = instance.root.children.find(
+      (child) => child instanceof Mesh && child !== trail,
+    ) as Mesh;
+    expect((particle.material as MeshBasicMaterial).color.r).toBeGreaterThan(0);
+    expect((particle.material as MeshBasicMaterial).color.b).toBe(0);
+    expect(trail.geometry.getAttribute("uv").count).toBe(colors.count);
+    expect(trail.geometry.getAttribute("normal").count).toBe(colors.count);
+    let disposed = false;
+    material.addEventListener("dispose", () => {
+      disposed = true;
+    });
+    instance.destroy();
+    expect(disposed).toBe(true);
+  });
+
+  it("runs trail shader time and per-vertex custom data, then restores legacy rendering", () => {
+    const graph = dynamicParameterOpacityGraph("Param2");
+    graph.blend = "add";
+    const renderer = new ThreeVfxRenderer({
+      scene: new Scene(),
+      camera: createCamera(),
+      materialGraphProvider: () => graph,
+    });
+    const effect = normalizeParticleEffect({
+      emitters: [
+        {
+          ...singleBurstEmitter(),
+          id: "shader-trail",
+          modules: { trails: true, velocity: true, customData: true },
+          initializeParticle: {
+            velocity: { mode: "vector", min: [2, 0, 0], max: [2, 0, 0] },
+          },
+          advanced: {
+            trails: {
+              material: createMaterialInstance(graph, "trail"),
+              minVertexDistance: 0.001,
+            },
+            customData: {
+              channels: [0.25, 0.5, 0.75, 1].map((value) => ({
+                mode: "constant",
+                value,
+              })),
+            },
+          },
+        },
+      ],
+    });
+    const instance = renderer.createEffect(effect);
+    for (let i = 0; i < 5; i++) renderer.update(1 / 60);
+    const trail = firstTrailMesh(instance);
+    const material = trail.material as ShaderMaterial;
+    expect(material).toBeInstanceOf(ShaderMaterial);
+    expect(material.blending).toBe(AdditiveBlending);
+    expect(material.uniforms.uTime!.value).toBeGreaterThan(0);
+    expect(material.vertexShader).toContain("color.rgb * color.a");
+    expect(material.fragmentShader).toContain("varying vec4 uDynamicParams");
+    const data = trail.geometry.getAttribute("trailDynamicParams");
+    expect([data.getX(0), data.getY(0), data.getZ(0), data.getW(0)]).toEqual([
+      0.25, 0.5, 0.75, 1,
+    ]);
+    effect.emitters[0]!.advanced.trails.material = null;
+    instance.updateDefinition(effect, { preserveViews: true });
+    for (let i = 0; i < 5; i++) renderer.update(1 / 60);
+    const legacy = firstTrailMesh(instance).material as MeshBasicMaterial;
+    expect(legacy).toBeInstanceOf(MeshBasicMaterial);
+    expect(legacy.map).toBeNull();
+    instance.destroy();
+  });
+
+  it("animates fixed trail UVs without mutating the provider texture", () => {
+    const graph = scrollingTextureGraph([0.25, 0]);
+    const texture = new Texture();
+    const material = createMaterialInstance(graph, "trail-pan");
+    material.mainTex = { type: "texture", id: "trail", path: "trail.png" };
+    const renderer = new ThreeVfxRenderer({
+      scene: new Scene(),
+      camera: createCamera(),
+      materialGraphProvider: () => graph,
+      textureProvider: { getTexture: () => texture },
+    });
+    const instance = renderer.createEffect(
+      normalizeParticleEffect({
+        emitters: [
+          {
+            ...singleBurstEmitter(),
+            id: "pan-trail",
+            modules: { trails: true, velocity: true },
+            initializeParticle: {
+              velocity: { mode: "vector", min: [2, 0, 0], max: [2, 0, 0] },
+            },
+            advanced: { trails: { material, minVertexDistance: 0.001 } },
+          },
+        ],
+      }),
+    );
+    for (let i = 0; i < 5; i++) renderer.update(1 / 60);
+    const map = (firstTrailMesh(instance).material as MeshBasicMaterial).map!;
+    expect(map).not.toBe(texture);
+    expect(map.offset.x).toBeGreaterThan(0);
+    expect(texture.offset.x).toBe(0);
+    instance.destroy();
+  });
+
+  it("composes independent Three trail RGBA and preserves inherited colors", () => {
+    const gradient = (color: number[], alpha: number) => ({
+      mode: "blend",
+      colorStops: [
+        { position: 0, color },
+        { position: 1, color },
+      ],
+      alphaStops: [
+        { position: 0, alpha },
+        { position: 1, alpha },
+      ],
+    });
+    const render = (inheritColor: boolean, authored: boolean) => {
+      const renderer = new ThreeVfxRenderer({
+        scene: new Scene(),
+        camera: createCamera(),
+      });
+      const instance = renderer.createEffect(
+        normalizeParticleEffect({
+          emitters: [
+            {
+              ...singleBurstEmitter(),
+              modules: {
+                color: false,
+                rotation: false,
+                velocity: true,
+                trails: true,
+              },
+              initializeParticle: {
+                velocity: { mode: "vector", min: [2, 0, 0], max: [2, 0, 0] },
+              },
+              advanced: {
+                trails: {
+                  inheritColor,
+                  minVertexDistance: 0.001,
+                  length: { mode: "constant", value: 2 },
+                  ...(authored
+                    ? {
+                        colorOverLifetime: gradient([1, 0.5, 0.5], 0.5),
+                        colorOverTrail: gradient([0.5, 1, 0.5], 0.8),
+                      }
+                    : {}),
+                },
+              },
+            },
+          ],
+        }),
+      );
+      for (let i = 0; i < 3; i++) renderer.update(1 / 60);
+      const attribute = firstTrailMesh(instance).geometry.getAttribute("color");
+      const rgba = [
+        attribute.getX(0),
+        attribute.getY(0),
+        attribute.getZ(0),
+        attribute.getW(0),
+      ];
+      renderer.destroy();
+      return rgba;
+    };
+    const independent = render(false, true);
+    const white = render(false, false);
+    expect(independent[0]).toBeCloseTo(srgbToLinear(0.5));
+    expect(independent[1]).toBeCloseTo(srgbToLinear(0.5));
+    expect(independent[2]).toBeCloseTo(srgbToLinear(0.25));
+    expect(independent[3]).toBeCloseTo(white[3]! * 0.4);
+    expect(render(true, true)).toEqual(render(true, false));
+  });
+
   it("renders camera-facing history trails in Three with length 0 lifetime semantics", () => {
     const camera = createCamera();
     const renderer = new ThreeVfxRenderer({ scene: new Scene(), camera });
@@ -2558,7 +2779,7 @@ function firstTrailMesh(instance: { root: { children: unknown[] } }): Mesh {
     (child): child is Mesh =>
       child instanceof Mesh &&
       child.geometry instanceof BufferGeometry &&
-      child.material instanceof MeshBasicMaterial &&
+      !Array.isArray(child.material) &&
       child.material.vertexColors,
   );
   if (!trail) throw new Error("Expected a trail mesh.");

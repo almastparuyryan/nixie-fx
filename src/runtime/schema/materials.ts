@@ -226,6 +226,7 @@ export type MaterialNodeType =
   | "fresnel" // 2D radial UV falloff (NOT real Fresnel — §4)
   | "fresnelTrue" // View-dependent Fresnel, with world-space normal/view inputs
   | "sphereMask"
+  | "twoSidedSign" // fragment face orientation: front +1, back -1
   // --- iteration 5b P0: cheap math glue (Unreal Math Expressions) ---
   | "abs"
   | "frac"
@@ -298,6 +299,7 @@ export const MATERIAL_NODE_TYPES: readonly MaterialNodeType[] = [
   "fresnel",
   "fresnelTrue",
   "sphereMask",
+  "twoSidedSign",
   "abs",
   "frac",
   "floor",

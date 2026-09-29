@@ -11,6 +11,7 @@ import {
   UniformsLib,
   UniformsUtils,
   NormalBlending,
+  RepeatWrapping,
   Vector2,
   Vector4,
   type Blending,
@@ -45,7 +46,7 @@ import {
   getProceduralBillboardTexture,
   proceduralBillboardTextureKey,
 } from "./proceduralBillboardTexture";
-import { rawColorSpaceTextureView } from "./textureViews";
+import { cloneTextureView, rawColorSpaceTextureView } from "./textureViews";
 import type { ThreeVfxEffectInstanceOptions } from "./types";
 
 export interface ThreeEmitterMaterialResolution {
@@ -72,6 +73,72 @@ export function threeBlendingForEffectiveBlend(
 
 export type ThreeParticleMaterial =
   MeshBasicMaterial | MeshStandardMaterial | ShaderMaterial;
+
+/** Reuse the particle compiler with an isolated trail surface and ribbon inputs. */
+export function createThreeTrailMaterial(
+  emitter: ParticleEmitterDefinition,
+  options: ThreeVfxEffectInstanceOptions,
+): ThreeEmitterMaterialResolution | null {
+  const trails = emitter.advanced.trails;
+  if (!trails.material) return null;
+  const resolution = createThreeEmitterMaterial(
+    {
+      ...emitter,
+      modules: { ...emitter.modules, textureSheetAnimation: false },
+      render: {
+        ...emitter.render,
+        material: trails.material,
+        texture: trails.texture,
+        blend: "alpha",
+        shading: "unlit",
+        depthTest: trails.depthTest,
+        depthWrite: trails.depthWrite,
+        opacitySource: "textureAlpha",
+        opacityInvert: false,
+      },
+    },
+    options,
+  );
+  const material = resolution.material;
+  material.vertexColors = true;
+  if (
+    !(material instanceof ShaderMaterial) &&
+    material.map &&
+    (trails.textureMode === "tile" ||
+      resolution.fixed?.uvPan ||
+      resolution.fixed?.uvRotate)
+  ) {
+    const map = cloneTextureView(material.map);
+    map.wrapS = RepeatWrapping;
+    map.wrapT = RepeatWrapping;
+    material.map = map;
+    resolution.ownedTextures.push(map);
+  }
+  if (material instanceof ShaderMaterial) {
+    material.vertexShader = material.vertexShader
+      .replace(
+        "uniform vec4 uDynamicParams;",
+        "attribute vec4 trailDynamicParams;\nvarying vec4 uDynamicParams;",
+      )
+      .replace(
+        "void main() {",
+        "void main() {\n  uDynamicParams = trailDynamicParams;",
+      )
+      .replace(
+        "vColor = vec4(uParticleColor.rgb * uParticleColor.a, uParticleColor.a);",
+        "vColor = vec4(color.rgb * color.a, color.a);",
+      );
+    material.fragmentShader = material.fragmentShader.replace(
+      "uniform vec4 uDynamicParams;",
+      "varying vec4 uDynamicParams;",
+    );
+  }
+  resolution.unsupportedFeatures = resolution.unsupportedFeatures.map(
+    (message) =>
+      message.replace(".render.material", ".advanced.trails.material"),
+  );
+  return resolution;
+}
 
 export function createThreeEmitterMaterial(
   emitter: ParticleEmitterDefinition,
@@ -463,6 +530,17 @@ function createThreeShaderMaterial(
     blending: threeBlendingForEffectiveBlend(effectiveBlend),
     premultipliedAlpha: effectiveBlend === "premultiplied",
     side: threeSideForGraph(graph),
+    // Alpha-blended 3D meshes need backs before fronts, like Three's built-in
+    // materials. ShaderMaterial defaults to one pass, which lets triangle
+    // index order put rear surfaces over the front. Flat particles and additive
+    // materials gain nothing from the extra draw, so retain their single pass.
+    forceSinglePass: !(
+      emitter.mode === "mesh" &&
+      emitter.mesh.renderMode === "meshAsset" &&
+      !materialOwnsBlend &&
+      effectiveBlend !== "additive" &&
+      threeSideForGraph(graph) === DoubleSide
+    ),
   });
   return { material, ownedTextures: [] };
 }

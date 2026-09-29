@@ -526,10 +526,12 @@ export function analyzeGraphTier(graph: ShaderGraph): TierAnalysis {
   // Keep the entire UV chain in the fragment shader, including any panners.
   // Connected panner speeds can be arbitrary expressions; the fixed UV-pan
   // descriptor only represents local speed values and would discard the input.
+  // Face orientation is also fragment-only, even in an otherwise static graph.
   if (
     [...reachable].some((id) => {
       const node = index.nodeById.get(id);
       return (
+        node?.type === "twoSidedSign" ||
         node?.type === "polarCoordinates" ||
         (node?.type === "panner" &&
           !!node.inputs.speed &&
