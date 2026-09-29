@@ -1177,6 +1177,85 @@ describe("Pixi VFX runtime renderer", () => {
     instance.destroy();
   });
 
+  it("composes independent trail gradients and ignores them when inheriting", () => {
+    const gradient = (color: number[], alpha: number) => ({
+      mode: "blend",
+      colorStops: [
+        { position: 0, color },
+        { position: 1, color },
+      ],
+      alphaStops: [
+        { position: 0, alpha },
+        { position: 1, alpha },
+      ],
+    });
+    const render = (inheritColor: boolean, authored: boolean) => {
+      const instance = new PixiVfxEffectInstance({
+        effect: trailEffect({
+          inheritColor,
+          ...(authored
+            ? {
+                colorOverLifetime: gradient([1, 0.5, 0.5], 0.5),
+                colorOverTrail: gradient([0.5, 1, 0.5], 0.8),
+              }
+            : {}),
+        }),
+        fallbackTextures: testFallbackTextures(),
+        projection: createPixiVfx2dProjection({ pixelsPerUnit: 100 }),
+        seed: 7,
+        timeSeconds: 0,
+      });
+      for (let i = 1; i <= 3; i++) instance.update(1 / 60, i / 60);
+      return instance;
+    };
+    const independent = render(false, true);
+    const white = render(false, false);
+    const inherited = render(true, true);
+    const legacy = render(true, false);
+    const tint = Number(firstTrailParticle(independent).tint);
+    expect((tint >> 16) & 255).toBeCloseTo(127, 0);
+    expect((tint >> 8) & 255).toBeCloseTo(127, 0);
+    expect(tint & 255).toBe(64);
+    expect(firstTrailParticle(independent).alpha).toBeCloseTo(
+      firstTrailParticle(white).alpha * 0.4,
+    );
+    expect(firstTrailParticle(inherited).tint).toBe(
+      firstTrailParticle(legacy).tint,
+    );
+    expect(firstTrailParticle(inherited).alpha).toBe(
+      firstTrailParticle(legacy).alpha,
+    );
+    for (const instance of [independent, white, inherited, legacy])
+      instance.destroy();
+  });
+
+  it("varies independent colors along a lifetime-limited Pixi trail", () => {
+    const instance = new PixiVfxEffectInstance({
+      effect: trailEffect({
+        inheritColor: false,
+        length: { mode: "constant", value: 0 },
+        colorOverTrail: {
+          mode: "blend",
+          colorStops: [
+            { position: 0, color: [1, 0, 0] },
+            { position: 1, color: [0, 0, 1] },
+          ],
+        },
+      }),
+      fallbackTextures: testFallbackTextures(),
+      projection: createPixiVfx2dProjection({ pixelsPerUnit: 100 }),
+      seed: 7,
+      timeSeconds: 0,
+    });
+    for (let i = 1; i <= 10; i++) instance.update(1 / 60, i / 60);
+    const particles = particleContainers(instance)[0]!.particleChildren;
+    expect(particles.length).toBeGreaterThan(2);
+    expect(
+      new Set(particles.map((point) => (point as Particle).tint)).size,
+    ).toBeGreaterThan(2);
+    instance.destroy();
+  });
+
   it("renders persistent trail particles from particle history", () => {
     const instance = new PixiVfxEffectInstance({
       effect: trailEffect(),

@@ -16,6 +16,7 @@ import {
 } from "../assets/paths";
 import {
   normalizeShaderGraph,
+  resolveEffectiveMainTexPath,
   resolveMaterialTextureNodeBinding,
   type ShaderGraph,
 } from "./materials";
@@ -367,6 +368,50 @@ function validateEmitters(
     validateCoreRuntimeSupport(rawEmitterRecord, emitter, path, collector);
     validateEmitterModuleSupport(rawEmitterRecord, emitter, path, collector);
     validateEmitterMaterial(emitter, emitterIndex, options, collector);
+    if (emitter.modules.trails && emitter.advanced.trails.material) {
+      const trailCollector: ValidationCollector = {
+        issues: [],
+        blockers: [],
+        pathsWithNumericIssues: new Set(),
+      };
+      validateEmitterMaterial(
+        {
+          ...emitter,
+          render: {
+            ...emitter.render,
+            material: emitter.advanced.trails.material,
+            texture:
+              resolveEffectiveMainTexPath(
+                resolveMaterialGraph(
+                  emitter.advanced.trails.material.shaderId,
+                  options,
+                ) ?? undefined,
+                emitter.advanced.trails.material,
+              ) || emitter.advanced.trails.texture,
+          },
+        },
+        emitterIndex,
+        options,
+        trailCollector,
+      );
+      for (const issue of [
+        ...trailCollector.issues,
+        ...trailCollector.blockers,
+      ]) {
+        issue.path = issue.path.replace(
+          ".render.material",
+          ".advanced.trails.material",
+        );
+      }
+      collector.issues.push(...trailCollector.issues);
+      collector.blockers.push(...trailCollector.blockers);
+      validateTextureValue(
+        emitter.advanced.trails.material.mainTex?.path,
+        `${path}.advanced.trails.material.mainTex`,
+        options,
+        collector,
+      );
+    }
   });
 }
 
