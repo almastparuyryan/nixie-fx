@@ -203,6 +203,14 @@ describe("lit particle materials on Three", () => {
       "isOrthographic ? vec3(0.0, 0.0, 1.0) : normalize(vNfxViewPosition)",
     );
     expect(material.fragmentShader).not.toContain("outColor.rgb = nfxShadeLit");
+    // Transparent double-sided meshes render a FLIP_SIDED BackSide pass, where
+    // gl_FrontFacing is true for rear faces; the normal must still face away.
+    expect(material.fragmentShader).toMatch(
+      /bool nfxIsFrontFace\(\) \{\s*#ifdef FLIP_SIDED\s*return !gl_FrontFacing;/,
+    );
+    expect(material.fragmentShader).toContain(
+      "return nfxIsFrontFace() ? n : -n;",
+    );
   });
 
   it("renders a lit Tier-2 graph with scene lights bound", () => {

@@ -123,9 +123,19 @@ varying vec3 vNfxViewPosition;
 varying vec3 vNfxViewNormal;
 varying vec3 vNfxWorldPosition;
 
+// Three draws transparent double-sided meshes as a BackSide pass, then a
+// FrontSide pass. The BackSide pass flips the winding (FLIP_SIDED), so
+// gl_FrontFacing is true there for the rear faces being drawn.
+bool nfxIsFrontFace() {
+#ifdef FLIP_SIDED
+  return !gl_FrontFacing;
+#else
+  return gl_FrontFacing;
+#endif
+}
 vec3 nfxGeometryViewNormal() {
   vec3 n = normalize(vNfxViewNormal);
-  return gl_FrontFacing ? n : -n;
+  return nfxIsFrontFace() ? n : -n;
 }
 vec3 nfxViewPosition() { return -vNfxViewPosition; }
 vec3 nfxViewDirectionView() {
@@ -145,7 +155,7 @@ vec3 nfxApplyTangentNormal(vec3 n, vec3 tangentNormal) {
   vec3 b = dp2perp * duv1.y + dp1perp * duv2.y;
   float det = max(dot(t, t), dot(b, b));
   if (det <= 0.0) return n;
-  float scale = inversesqrt(det) * (gl_FrontFacing ? 1.0 : -1.0);
+  float scale = inversesqrt(det) * (nfxIsFrontFace() ? 1.0 : -1.0);
   return normalize(mat3(t * scale, b * scale, n) * tangentNormal);
 }
 #else
