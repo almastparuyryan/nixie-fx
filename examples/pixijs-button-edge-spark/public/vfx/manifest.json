@@ -1,0 +1,55 @@
+{
+  "kind": "vfx-manifest",
+  "version": 1,
+  "generatedAt": "2026-10-01T11:24:16.767Z",
+  "sourceHash": "fnv1a32:1ebc760f",
+  "effects": [
+    {
+      "id": "button-edge-spark",
+      "name": "Button Edge Spark",
+      "path": "effects/button-edge-spark.json",
+      "sourceEffectFile": "button-edge-spark.json",
+      "sourceEffectId": "button-edge-spark",
+      "sourceHash": "fnv1a32:7cb828e3",
+      "support": {
+        "status": "supported",
+        "overall": "supported",
+        "targetProfile": "pixi-ui-2d",
+        "preferredBackend": "pixi2d",
+        "portableSubset": true,
+        "backends": {
+          "pixi2d": {
+            "backend": "pixi2d",
+            "status": "supported",
+            "warnings": [],
+            "blockers": []
+          },
+          "three3d": {
+            "backend": "three3d",
+            "status": "supported",
+            "warnings": [],
+            "blockers": []
+          }
+        },
+        "unsupportedModules": [],
+        "partialModules": [],
+        "warnings": []
+      },
+      "validation": {
+        "valid": true,
+        "errors": [],
+        "warnings": [],
+        "infos": [],
+        "blockers": []
+      }
+    }
+  ],
+  "assets": [],
+  "validation": {
+    "valid": true,
+    "errors": [],
+    "warnings": [],
+    "infos": [],
+    "blockers": []
+  }
+}
