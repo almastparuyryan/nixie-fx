@@ -39,4 +39,4 @@ This demonstrates one UI cue, not a mobile performance benchmark. The glow aroun
 
 ## Repository placement
 
-Copy this folder to `examples/pixijs-card-reveal-glow/` in a branch of `azakhary/nixie-fx` or an authorized fork. Run the repository checks required by its `AGENTS.md`, request maintainer review, and merge only after approval. This prepared folder is not yet a public GitHub example.
+This example is published on the author’s public fork for maintainer review. Repository checks required by `AGENTS.md` passed locally. Merge into `azakhary/nixie-fx` remains subject to maintainer approval.
